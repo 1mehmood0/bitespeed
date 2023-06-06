@@ -1,5 +1,4 @@
 const router = require("express").Router();
-const connection = require("../db/index");
 const Query = require("../db/query")
 const moment = require("moment");
 const { all } = require("axios");
@@ -7,9 +6,7 @@ const { all } = require("axios");
 router.post("/identify", contactTrace)
 
 async function contactTrace(req, res) {
-    const data = { 'email': "msyed7008@gmail.cm", 'phoneNumber': '1234567895' };
     const { email, phoneNumber } = req.body;
-    let linkPrecedence = "primary";
     const allRowsForEmailOrPhone = await Query.getByEmailOrPhone(email, phoneNumber);
     console.log("allRowsForEmailOrPhone", allRowsForEmailOrPhone);
     /*If Data Not  Present:-
@@ -27,7 +24,6 @@ async function contactTrace(req, res) {
         }
         try {
             const dataForInserted = await Query.insertIntoDatabase(data);
-            //console.log("dataForinserted", dataForInserted);
             res.status(200).send({
                 "contact": {
                     "primaryContatctId": dataForInserted.insertId,
@@ -40,14 +36,22 @@ async function contactTrace(req, res) {
             console.log("Query Failed", error);
         }
 
-
     }
 
     else {
+        const primaryPresent = isPrimaryContactPresent(allRowsForEmailOrPhone);
+        console.log("isPRESTNN???", primaryPresent);
+        if (!primaryPresent) {
+            const primaryContactId = allRowsForEmailOrPhone[0].linkedId;
+            const primaryContact = await Query.getById(primaryContactId);
+            console.log("++++", primaryContact);
+            allRowsForEmailOrPhone.push(primaryContact[0]);
+        }
+
         const exactData = await Query.getByEmailAndPhone(email, phoneNumber);
         //console.log("ED--->>", exactData);
         if (exactData.length != 0) {
-            res.send({ "contact": responseMapper(exactData) })
+            res.send({ "contact": responseMapper(allRowsForEmailOrPhone) })
         }
         else {
             if (allRowsForEmailOrPhone) {
@@ -64,12 +68,10 @@ async function contactTrace(req, res) {
                 const dataForInserted = await Query.insertIntoDatabase(dataSecondary);
                 dataSecondary['id'] = dataForInserted.insertId;
                 allRowsForEmailOrPhone.push(dataSecondary);
-                res.status(200).send(responseMapper(allRowsForEmailOrPhone));
+                res.status(200).send({ contact: responseMapper(allRowsForEmailOrPhone) });
 
             }
         }
-        console.log("Data already present")
-        //
     }
 
 }
@@ -87,12 +89,12 @@ async function contactTrace(req, res) {
     }
 */
 function responseMapper(data) {
+    console.log("Data TO MAPP->", data)
     const responseData = {
         emails: [],
         phoneNumbers: [],
         secondaryContactIds: []
     }
-    //responseData['primaryContactId'] = data[0].id;
     data.forEach(contact => {
         if (contact.linkPrecedence == 'primary') {
             responseData['primaryContactId'] = contact.id;
@@ -100,6 +102,8 @@ function responseMapper(data) {
         else {
             responseData['secondaryContactIds'].push(contact.id)
         }
+
+
         if (!responseData.emails.includes(contact.email)) {
             responseData['emails'].push(contact.email);
         }
@@ -108,15 +112,12 @@ function responseMapper(data) {
         }
 
     });
-    //responseData['secondaryContactIds'].pop(responseData['primaryContactId']);
-    //console.log(responseData);
     return responseData;
 }
 
-function primaryIdFinder(data) {
+async function primaryIdFinder(data) {
     let id;
     data.forEach(row => {
-        console.log("ER_>", row);
         if (row.linkPrecedence == 'primary') {
             id = row.id;
             return;
@@ -124,5 +125,19 @@ function primaryIdFinder(data) {
     })
     return id;
 }
+
+function isPrimaryContactPresent(data) {
+    let primaryPresentFlag = false;
+    data.forEach(row => {
+        console.log("ER_>", row);
+        if (row.linkPrecedence == 'primary') {
+            primaryPresentFlag = true;
+            return;
+        }
+    })
+    return primaryPresentFlag;
+}
+
+
 
 module.exports = router;

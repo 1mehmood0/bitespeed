@@ -30,7 +30,7 @@ async function insertIntoDatabase(data) {
             }
             else {
                 console.log("inserted successfully")
-                //console.log(data)
+                console.log(data)
                 resolve(data);
             }
         })
@@ -54,4 +54,20 @@ async function getByEmailAndPhone(email, phoneNumber) {
     })
 }
 
-module.exports = { getByEmailOrPhone, insertIntoDatabase, getByEmailAndPhone }
+async function getById(id) {
+    let query = 'SELECT * FROM contact WHERE id = ?';
+    //console.log(moment().format('yyyy-MM-DD hh:mm:ss.SS'))
+    return new Promise((resolve, reject) => {
+        connection.query(query, [id], (err, data) => {
+            if (err) {
+                console.log("Query Failed", err);
+                reject(err);
+            }
+            //console.log("daTA FROM AND QUERY->>", data[0]);
+            return resolve(data);
+        })
+
+    })
+}
+
+module.exports = { getByEmailOrPhone, insertIntoDatabase, getByEmailAndPhone, getById }
