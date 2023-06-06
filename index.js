@@ -3,21 +3,16 @@ require("dotenv").config();
 
 const app = express();
 const PORT = "9020"
-const mysql = require("mysql")
-
-let connection = mysql.createConnection({
-    host: 'localhost',
-    port: '3307',
-    user: 'root',
-    password: process.env.DB_PASS,
-    database: process.env.DB_NAME
-});
+const connection = require("./db/index")
 //console.log("conn->", connection)
-
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use('/', (req, res) => {
+
+const identityRouter = require("./routes/identity");
+app.use("/", identityRouter);
+
+app.get('/', (req, res) => {
     res.send("backend running");
 })
 
