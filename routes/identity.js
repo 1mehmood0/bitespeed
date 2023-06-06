@@ -1,6 +1,8 @@
 const router = require("express").Router();
 const connection = require("../db/index");
+const Query = require("../db/query")
 const moment = require("moment");
+const { all } = require("axios");
 
 router.post("/identify", contactTrace)
 
@@ -8,56 +10,72 @@ async function contactTrace(req, res) {
     const data = { 'email': "msyed7008@gmail.cm", 'phoneNumber': '1234567895' };
     const { email, phoneNumber } = req.body;
     let linkPrecedence = "primary";
-    let query = 'SELECT * FROM contact WHERE email = ? OR phoneNumber = ?';
-    console.log(moment().format('yyyy-MM-DD hh:mm:ss.SS'))
-    connection.query(query, [email, phoneNumber], (err, data) => {
-        if (err) {
-            console.log("Query Failed", err);
-        }
-        console.log("daTA FROM OR QUERY->>", data[0]);
-        /*If Data Not  Present:-
+    const allRowsForEmailOrPhone = await Query.getByEmailOrPhone(email, phoneNumber);
+    console.log("allRowsForEmailOrPhone", allRowsForEmailOrPhone);
+    /*If Data Not  Present:-
 
-            * Make primary COntact
-            * else create secondary contact
-            
-               */
-        if (data.length == 0) {
-            linkPrecedence = 'primary';
-            let data = {
-                linkPrecedence: linkPrecedence,
-                email: email,
-                phoneNumber: phoneNumber,
-                createdAt: moment().format('yyyy-MM-DD hh:mm:ss.SS ')
-            }
-            let queryToinsert = 'INSERT into contact SET ?'
-            connection.query(queryToinsert, [data], (err, data) => {
-                if (err) {
-                    console.log("Query Failed", err);
-                    res.status(500).send("Internal Error")
-                }
-                else {
-                    console.log("inserted successfully")
-                    res.status(200).send(responseMapper(data));
-                }
-            })
+        * Make primary COntact
+        * else create secondary contact
+        
+           */
+    if (allRowsForEmailOrPhone.length == 0) {
+        let data = {
+            linkPrecedence: 'primary',
+            email: email,
+            phoneNumber: phoneNumber,
+            createdAt: moment().format('yyyy-MM-DD hh:mm:ss.SS ')
         }
-
-        else {
-            const queryForExactMatch = 'SELECT * FROM contact WHERE email = ? AND phoneNumber = ?';
-            connection.query(queryForExactMatch, [email, phoneNumber], (err, data) => {
-                if (err) console.log("Error in query");
-                else {
-                    console.log("EXACTDATA->>", data);
+        try {
+            const dataForInserted = await Query.insertIntoDatabase(data);
+            //console.log("dataForinserted", dataForInserted);
+            res.status(200).send({
+                "contact": {
+                    "primaryContatctId": dataForInserted.insertId,
+                    "emails": [email],
+                    "phoneNumbers": [phoneNumber],
+                    "secondaryContactIds": []
                 }
             });
-            console.log("Data already present")
-            res.send({ "contact": responseMapper(data) })
+        } catch (error) {
+            console.log("Query Failed", error);
         }
 
-    })
 
+    }
+
+    else {
+        const exactData = await Query.getByEmailAndPhone(email, phoneNumber);
+        //console.log("ED--->>", exactData);
+        if (exactData.length != 0) {
+            res.send({ "contact": responseMapper(exactData) })
+        }
+        else {
+            if (allRowsForEmailOrPhone) {
+                const linkedId = primaryIdFinder(allRowsForEmailOrPhone);
+                linkPrecedence = "secondary";
+                let dataSecondary = {
+                    linkPrecedence: 'secondary',
+                    email: email,
+                    phoneNumber: phoneNumber,
+                    linkedId: linkedId,
+                    createdAt: moment().format('yyyy-MM-DD hh:mm:ss.SS ')
+                }
+                //console.log(dataSecondary, "<--")
+                const dataForInserted = await Query.insertIntoDatabase(dataSecondary);
+                dataSecondary['id'] = dataForInserted.insertId;
+                allRowsForEmailOrPhone.push(dataSecondary);
+                res.status(200).send(responseMapper(allRowsForEmailOrPhone));
+
+            }
+        }
+        console.log("Data already present")
+        //
+    }
 
 }
+
+
+
 /*
 {
         "contact":{
@@ -74,15 +92,37 @@ function responseMapper(data) {
         phoneNumbers: [],
         secondaryContactIds: []
     }
-    responseData['primaryContactId'] = data[0].id;
+    //responseData['primaryContactId'] = data[0].id;
     data.forEach(contact => {
-        responseData['emails'].push(contact.email);
-        responseData['phoneNumbers'].push(contact.phoneNumber);
-        responseData['secondaryContactIds'].push(contact.id)
+        if (contact.linkPrecedence == 'primary') {
+            responseData['primaryContactId'] = contact.id;
+        }
+        else {
+            responseData['secondaryContactIds'].push(contact.id)
+        }
+        if (!responseData.emails.includes(contact.email)) {
+            responseData['emails'].push(contact.email);
+        }
+        if (!responseData.phoneNumbers.includes(contact.phoneNumber)) {
+            responseData['phoneNumbers'].push(contact.phoneNumber);
+        }
+
     });
-    responseData['secondaryContactIds'].pop(responseData['primaryContactId']);
+    //responseData['secondaryContactIds'].pop(responseData['primaryContactId']);
     //console.log(responseData);
     return responseData;
+}
+
+function primaryIdFinder(data) {
+    let id;
+    data.forEach(row => {
+        console.log("ER_>", row);
+        if (row.linkPrecedence == 'primary') {
+            id = row.id;
+            return;
+        }
+    })
+    return id;
 }
 
 module.exports = router;
